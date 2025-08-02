@@ -1768,7 +1768,7 @@ namespace Characters
                     }
                     else if (!Animation.IsPlaying(HumanAnimations.Dash) && !Animation.IsPlaying(HumanAnimations.Jump) && !IsFiringThunderspear())
                     {
-                        Vector3 targetDirection = GetTargetDirection() * TargetMagnitude * ((float)Stats.Acceleration * 2f - 50f) / 5f;
+                        Vector3 targetDirection = GetTargetDirection() * ((float)Stats.Acceleration * 2f - 50f) / 5f;
                         if (!HasDirection)
                         {
                             if (State == HumanState.Attack)
