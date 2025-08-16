@@ -83,6 +83,7 @@ namespace Characters
         public bool IsWalk;
         private const float MaxVelocityChange = 10f;
         private float _originalDashSpeed;
+        private Vector3 _originalDashDirection;
         public Quaternion _targetRotation;
         private float _wallRunTime = 0f;
         private bool _wallJump = false;
@@ -413,7 +414,8 @@ namespace Characters
                 Stats.UseDashGas();
                 TargetAngle = targetAngle;
                 Vector3 direction = GetTargetDirection();
-                _originalDashSpeed = Cache.Rigidbody.velocity.magnitude;
+                _originalDashDirection = direction;
+                _originalDashSpeed = Vector3.Project(Cache.Rigidbody.velocity, direction).magnitude;
                 _targetRotation = GetTargetRotation();
                 if (!_wallSlide)
                 {
@@ -427,9 +429,9 @@ namespace Characters
                     PlayAnimation(HumanAnimations.Dodge, 0.2f);
                 EffectSpawner.Spawn(EffectPrefabs.GasBurst, Cache.Transform.position, Cache.Transform.rotation);
                 PlaySound(HumanSounds.GasBurst);
-                _dashTimeLeft = 0.5f;
 
                 State = HumanState.AirDodge;
+                _dashTimeLeft = 0.5f;
                 FalseAttack();
                 Cache.Rigidbody.AddForce(direction * 40f, ForceMode.VelocityChange);
                 _dashCooldownLeft = 0.2f;
@@ -444,14 +446,15 @@ namespace Characters
             {
                 Stats.UseDashGas();
                 TargetAngle = targetAngle;
-                _originalDashSpeed = Cache.Rigidbody.velocity.magnitude;
+                _originalDashDirection = direction;
+                _originalDashSpeed = Vector3.Project(Cache.Rigidbody.velocity, direction).magnitude;
                 _targetRotation = Quaternion.LookRotation(direction);
                 Cache.Rigidbody.rotation = _targetRotation;
                 EffectSpawner.Spawn(EffectPrefabs.GasBurst, Cache.Transform.position, Cache.Transform.rotation);
                 PlaySound(HumanSounds.GasBurst);
-                _dashTimeLeft = 0.5f;
                 CrossFade(HumanAnimations.Dash, 0.1f, 0.1f);
                 State = HumanState.AirDodge;
+                _dashTimeLeft = 0.5f;
                 FalseAttack();
                 Cache.Rigidbody.AddForce(direction * 40f, ForceMode.VelocityChange);
                 _dashCooldownLeft = 0.2f;
@@ -1444,14 +1447,18 @@ namespace Characters
                 }
                 else if (State == HumanState.AirDodge)
                 {
-                    if (_dashTimeLeft > 0f)
+                    if (_dashTimeLeft <= 0f)
                     {
-                        _dashTimeLeft -= Time.deltaTime;
-                        if (Cache.Rigidbody.velocity.magnitude > _originalDashSpeed)
-                            Cache.Rigidbody.AddForce(-Cache.Rigidbody.velocity * Time.deltaTime * 1.7f, ForceMode.VelocityChange);
-                    }
-                    else
                         Idle();
+                    }
+                    //if (_dashTimeLeft > 0f)
+                    //{
+                    //    _dashTimeLeft -= Time.deltaTime;
+                    //    if (Cache.Rigidbody.velocity.magnitude > _originalDashSpeed)
+                    //        Cache.Rigidbody.AddForce(-Cache.Rigidbody.velocity * Time.deltaTime * 1.7f, ForceMode.VelocityChange);
+                    //}
+                    //else
+                    //    Idle();
                 }
                 if (CarryState == HumanCarryState.Carry)
                 {
@@ -1545,6 +1552,27 @@ namespace Characters
                 _currentVelocity = Cache.Rigidbody.velocity;
                 GameProgressManager.RegisterSpeed(_currentVelocity.magnitude);
                 CheckGround();
+
+                if (State == HumanState.AirDodge && _dashTimeLeft > 0.0)
+                {
+                    _dashTimeLeft -= Time.deltaTime;
+                    Vector3 velocityInDashDirection = Vector3.Project(Cache.Rigidbody.velocity, _originalDashDirection);
+                    float speedInDashDirection = Vector3.Dot(Cache.Rigidbody.velocity, _originalDashDirection);
+                    float remainingDashSpeed = speedInDashDirection - _originalDashSpeed;
+                    if (remainingDashSpeed > 0f)
+                    {
+                        if (speedInDashDirection * 1.7f * Time.deltaTime <= remainingDashSpeed)
+                        {
+                            Cache.Rigidbody.AddForce(velocityInDashDirection * -1.7f, ForceMode.Acceleration);
+                        }
+                        else
+                        {
+                            Cache.Rigidbody.AddForce(velocityInDashDirection * -(remainingDashSpeed / speedInDashDirection), ForceMode.VelocityChange);
+                        }
+                    }
+                }
+
+                Vector3 gravity = Gravity;// * Cache.Rigidbody.mass;
 
                 float rotationSpeed = 6f;
                 if (Grounded)
@@ -1757,7 +1785,7 @@ namespace Characters
                         if (Animation.GetNormalizedTime(HumanAnimations.ToRoof) < 0.22f)
                         {
                             Cache.Rigidbody.velocity = Vector3.zero;
-                            Cache.Rigidbody.AddForce(new Vector3(0f, Gravity.magnitude * Cache.Rigidbody.mass, 0f));
+                            gravity = Vector3.zero;
                         }
                         else
                         {
@@ -1825,22 +1853,18 @@ namespace Characters
                     }
                     FixedUpdateWallSlide();
                 }
+                //if (IsHookedLeft() && HookLeft.GetHookPosition().y > Cache.Transform.position.y && _launchLeft)
+                //    gravity = gravity * 0.5f;
+                //else if (IsHookedRight() && HookRight.GetHookPosition().y > Cache.Transform.position.y && _launchRight)
+                //    gravity = gravity * 0.5f;
+                gravity += WeatherManager.GetWeatherForce();
+                Cache.Rigidbody.AddForce(gravity, ForceMode.Acceleration);
                 if (pivotLeft && pivotRight)
                     FixedUpdatePivot((HookRight.GetHookPosition() + HookLeft.GetHookPosition()) * 0.5f);
                 else if (pivotLeft)
                     FixedUpdatePivot(HookLeft.GetHookPosition());
                 else if (pivotRight)
                     FixedUpdatePivot(HookRight.GetHookPosition());
-                bool lowerGravity = false;
-                if (IsHookedLeft() && HookLeft.GetHookPosition().y > Cache.Transform.position.y && _launchLeft)
-                    lowerGravity = true;
-                else if (IsHookedRight() && HookRight.GetHookPosition().y > Cache.Transform.position.y && _launchRight)
-                    lowerGravity = true;
-                Vector3 gravity;
-                if (lowerGravity)
-                    gravity = Gravity * 0.5f * Cache.Rigidbody.mass;
-                else
-                    gravity = Gravity * Cache.Rigidbody.mass;
                 if (Grounded && State == HumanState.Attack)
                 {
                     if (ValidStockAttacks())
@@ -1860,8 +1884,6 @@ namespace Characters
                     }
                     ToggleSparks(false);
                 }
-                gravity += WeatherManager.GetWeatherForce();
-                Cache.Rigidbody.AddForce(gravity);
                 if (!_cancelGasDisable)
                 {
                     if (pivot)
@@ -2307,22 +2329,6 @@ namespace Characters
             }
             if (launch)
             {
-                if (hook.IsHooked())
-                {
-                    Vector3 v = (hook.GetHookPosition() - Cache.Transform.position).normalized * 10f;
-                    if (!(_launchLeft && _launchRight))
-                        v *= 2f;
-                    if ((Vector3.Angle(Cache.Rigidbody.velocity, v) > 90f) && (SettingsManager.InputSettings.Human.Jump.GetKey() ^ SettingsManager.InputSettings.Human.AutoUseGas.Value))
-                    {
-                        pivot = true;
-                    }
-                    if (!pivot)
-                    {
-                        Cache.Rigidbody.AddForce(v);
-                        if (Vector3.Angle(Cache.Rigidbody.velocity, v) > 90f)
-                            Cache.Rigidbody.AddForce(-Cache.Rigidbody.velocity * 2f, ForceMode.Acceleration);
-                    }
-                }
                 if (hook.IsActive && Stats.CurrentGas > 0f)
                     Stats.UseFrameGas();
                 else if (launchTime > 0.3f)
@@ -2333,7 +2339,27 @@ namespace Characters
                         _launchRight = false;
                     hook.DisableActiveHook();
                     UnhookHuman(left);
-                    pivot = false;
+                }
+                if (hook.IsHooked())
+                {
+                    Vector3 pivotV = hook.GetHookPosition() - Cache.Transform.position;
+                    Vector3 v = pivotV.normalized * 10f;
+                    if (!(_launchLeft && _launchRight))
+                        v *= 2f;
+                    if ((Vector3.Angle(Cache.Rigidbody.velocity, v) > 90f) && (SettingsManager.InputSettings.Human.Jump.GetKey() ^ SettingsManager.InputSettings.Human.AutoUseGas.Value))
+                    {
+                        pivot = true;
+                    }
+                    if (!pivot)
+                    {
+                        Cache.Rigidbody.AddForce(v);
+
+                        float velocityAngle = Vector3.Angle(Cache.Rigidbody.velocity, pivotV);
+                        if (velocityAngle > 90f)
+                        {
+                            Cache.Rigidbody.AddForce(2f * Mathf.Cos(velocityAngle * Mathf.Deg2Rad) * Cache.Rigidbody.velocity, ForceMode.Acceleration);
+                        }
+                    }
                 }
             }
             return pivot;
