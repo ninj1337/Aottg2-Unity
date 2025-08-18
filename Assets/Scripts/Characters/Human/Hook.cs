@@ -447,7 +447,7 @@ namespace Characters
             if (_hasHookParent)
             {
                 if (HookParent != null)
-                    if (_usingDeathTimer)
+                    if (false || _usingDeathTimer)
                         _lastWorldHookPosition = _lastGoodHookPoint;
                     else
                         _lastWorldHookPosition = HookParent.TransformPoint(_hookPosition);

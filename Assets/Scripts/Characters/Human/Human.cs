@@ -2223,6 +2223,7 @@ namespace Characters
             }
             _currentVelocity = v * newSpeed;
             Cache.Rigidbody.velocity = _currentVelocity;
+            Cache.Rigidbody.AddForce(-Cache.Rigidbody.GetAccumulatedForce());
         }
 
         private bool IsStock(bool pivot)
