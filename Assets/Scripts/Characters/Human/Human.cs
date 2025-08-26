@@ -69,6 +69,7 @@ namespace Characters
         private int _bladeFireState;
 
         // physics
+        public Vector3 _instantForceAcc = Vector3.zero;
         public float ReelInAxis = 0f;
         public float ReelOutAxis = 0f;
         public float ReelOutScrollTimeLeft = 0f;
@@ -149,7 +150,11 @@ namespace Characters
         public void BlowAwayRPC(Vector3 force, PhotonMessageInfo info)
         {
             if (info.photonView.IsMine)
-                Cache.Rigidbody.AddForce(force, ForceMode.Impulse);
+            {
+                Vector3 impulseForce = force;
+                _instantForceAcc += impulseForce / Cache.Rigidbody.mass;
+                Cache.Rigidbody.AddForce(impulseForce, ForceMode.Impulse);
+            }
         }
 
         [PunRPC]
@@ -342,7 +347,9 @@ namespace Characters
             if (MountState == HumanMountState.Horse && !immediate)
             {
                 PlayAnimation(HumanAnimations.HorseDismount);
-                Cache.Rigidbody.AddForce((((Vector3.up * 10f) - (Cache.Transform.forward * 2f)) - (Cache.Transform.right * 1f)), ForceMode.VelocityChange);
+                Vector3 velocityChange = ((Vector3.up * 10f) - (Cache.Transform.forward * 2f)) - (Cache.Transform.right * 1f);
+                _instantForceAcc += velocityChange;
+                Cache.Rigidbody.AddForce(velocityChange, ForceMode.VelocityChange);
                 MountState = HumanMountState.None;
             }
             else
@@ -422,7 +429,9 @@ namespace Characters
 
                 State = HumanState.AirDodge;
                 FalseAttack();
-                Cache.Rigidbody.AddForce(direction * 40f, ForceMode.VelocityChange);
+                Vector3 velocityChange = direction * 40f;
+                _instantForceAcc += velocityChange;
+                Cache.Rigidbody.AddForce(velocityChange, ForceMode.VelocityChange);
                 _dashCooldownLeft = 0.2f;
                 ((InGameMenu)UIManager.CurrentMenu).HUDBottomHandler.ShakeGas();
             }
@@ -444,7 +453,9 @@ namespace Characters
                 CrossFade(HumanAnimations.Dash, 0.1f, 0.1f);
                 State = HumanState.AirDodge;
                 FalseAttack();
-                Cache.Rigidbody.AddForce(direction * 40f, ForceMode.VelocityChange);
+                Vector3 velocityChange = direction * 40f;
+                _instantForceAcc += velocityChange;
+                Cache.Rigidbody.AddForce(velocityChange, ForceMode.VelocityChange);
                 _dashCooldownLeft = 0.2f;
                 ((InGameMenu)UIManager.CurrentMenu).HUDBottomHandler.ShakeGas();
             }
@@ -561,7 +572,9 @@ namespace Characters
             SetCarrierTriggerCollider(false);
             SetTriggerCollider(false);
             SetVelocityFromCarrier();
-            Cache.Rigidbody.AddForce((((Vector3.up * 10f) - (Cache.Transform.forward * 2f)) - (Cache.Transform.right * 1f)), ForceMode.VelocityChange);
+            Vector3 velocityChange = ((Vector3.up * 10f) - (Cache.Transform.forward * 2f)) - (Cache.Transform.right * 1f);
+            _instantForceAcc += velocityChange;
+            Cache.Rigidbody.AddForce(velocityChange, ForceMode.VelocityChange);
         }
 
         [PunRPC]
@@ -584,7 +597,11 @@ namespace Characters
         public void SetVelocityFromCarrier()
         {
             if (Carrier != null)
+            {
                 Cache.Rigidbody.velocity = Carrier.CarryVelocity;
+                Cache.Rigidbody.AddForce(-_instantForceAcc, ForceMode.VelocityChange);
+                _instantForceAcc = Vector3.zero;
+            }
         }
 
         public Human GetHumanAlongRay(Ray ray, float distance)
@@ -1384,7 +1401,11 @@ namespace Characters
                     {
                         _dashTimeLeft -= Time.deltaTime;
                         if (Cache.Rigidbody.velocity.magnitude > _originalDashSpeed)
-                            Cache.Rigidbody.AddForce(-Cache.Rigidbody.velocity * Time.deltaTime * 1.7f, ForceMode.VelocityChange);
+                        {
+                            Vector3 velocityChange = -Cache.Rigidbody.velocity * Time.deltaTime * 1.7f;
+                            _instantForceAcc += velocityChange;
+                            Cache.Rigidbody.AddForce(velocityChange, ForceMode.VelocityChange);
+                        }
                     }
                     else
                         Idle();
@@ -1413,8 +1434,15 @@ namespace Characters
             }
         }
 
+        private IEnumerator PostFixedUpdate()
+        {
+            yield return new WaitForFixedUpdate();
+            _instantForceAcc = Vector3.zero;
+        }
+
         protected override void FixedUpdate()
         {
+            StartCoroutine(PostFixedUpdate());
             base.FixedUpdate();
             if (IsMine())
             {
@@ -1424,6 +1452,8 @@ namespace Characters
                 if (State == HumanState.Grab || Dead)
                 {
                     Cache.Rigidbody.velocity = Vector3.zero;
+                    Cache.Rigidbody.AddForce(-_instantForceAcc, ForceMode.VelocityChange);
+                    _instantForceAcc = Vector3.zero;
                     if (IsPlayingSound(HumanSounds.GasLoop))
                     {
                         StopSound(HumanSounds.GasLoop);
@@ -1434,17 +1464,23 @@ namespace Characters
                 if (CarryState == HumanCarryState.Carry)
                 {
                     Cache.Rigidbody.velocity = Vector3.zero;
+                    Cache.Rigidbody.AddForce(-_instantForceAcc, ForceMode.VelocityChange);
+                    _instantForceAcc = Vector3.zero;
                     Grounded = false;
                     return;
                 }
                 if (MountState == HumanMountState.Horse)
                 {
                     Cache.Rigidbody.velocity = Horse.Cache.Rigidbody.velocity;
+                    Cache.Rigidbody.AddForce(-_instantForceAcc, ForceMode.VelocityChange);
+                    _instantForceAcc = Vector3.zero;
                     return;
                 }
                 if (MountState == HumanMountState.MapObject)
                 {
                     Cache.Rigidbody.velocity = Vector3.zero;
+                    Cache.Rigidbody.AddForce(-_instantForceAcc, ForceMode.VelocityChange);
+                    _instantForceAcc = Vector3.zero;
                     ToggleSparks(false);
                     if (State != HumanState.Idle)
                         Idle();
@@ -1455,8 +1491,12 @@ namespace Characters
                     Vector3 vector2 = _hookHuman.Cache.Transform.position - Cache.Transform.position;
                     float magnitude = vector2.magnitude;
                     // Temporarily remove until a rework is done as this completely breaks hook physics
-                    /*if (magnitude > 2f)
-                        Cache.Rigidbody.AddForce((vector2.normalized * Mathf.Pow(magnitude, 0.15f) * 30f) - (Cache.Rigidbody.velocity * 0.95f), ForceMode.VelocityChange);*/
+                    if (magnitude > 2f)
+                    {
+                        Vector3 velocityChange = (vector2.normalized * Mathf.Pow(magnitude, 0.15f) * 30f) - (Cache.Rigidbody.velocity * 0.95f);
+                        _instantForceAcc += velocityChange;
+                        Cache.Rigidbody.AddForce(velocityChange, ForceMode.VelocityChange);
+                    }
                     _hookHumanConstantTimeLeft -= Time.fixedDeltaTime;
                     if (_hookHumanConstantTimeLeft <= 0f)
                     {
@@ -1572,6 +1612,8 @@ namespace Characters
                     {
                         _currentVelocity += force;
                         Cache.Rigidbody.velocity = _currentVelocity;
+                        Cache.Rigidbody.AddForce(-_instantForceAcc, ForceMode.VelocityChange);
+                        _instantForceAcc = Vector3.zero;
                     }
                     Cache.Rigidbody.rotation = Quaternion.Lerp(Cache.Transform.rotation, Quaternion.Euler(0f, TargetAngle, 0f), Time.deltaTime * 10f);
                     ToggleSparks(State == HumanState.Slide);
@@ -1674,6 +1716,8 @@ namespace Characters
                         if (Animation.GetNormalizedTime(HumanAnimations.ToRoof) < 0.22f)
                         {
                             Cache.Rigidbody.velocity = Vector3.zero;
+                            Cache.Rigidbody.AddForce(-_instantForceAcc, ForceMode.VelocityChange);
+                            _instantForceAcc = Vector3.zero;
                             Cache.Rigidbody.AddForce(new Vector3(0f, Gravity.magnitude * Cache.Rigidbody.mass, 0f));
                         }
                         else
@@ -1681,9 +1725,13 @@ namespace Characters
                             if (!_wallJump)
                             {
                                 _wallJump = true;
-                                Cache.Rigidbody.AddForce(Vector3.up * 8f, ForceMode.Impulse);
+                                Vector3 impulseForce = Vector3.up * 8f;
+                                _instantForceAcc += impulseForce / Cache.Rigidbody.mass;
+                                Cache.Rigidbody.AddForce(impulseForce, ForceMode.Impulse);
                             }
-                            Cache.Rigidbody.AddForce(Cache.Transform.forward * 0.05f, ForceMode.Impulse);
+                            Vector3 impulseForce2 = Cache.Transform.forward * 0.05f;
+                            _instantForceAcc += impulseForce2 / Cache.Rigidbody.mass;
+                            Cache.Rigidbody.AddForce(impulseForce2, ForceMode.Impulse);
                         }
                         if (Animation.GetNormalizedTime(HumanAnimations.ToRoof) >= 1f)
                         {
@@ -1697,11 +1745,15 @@ namespace Characters
                     }
                     else if (Animation.IsPlaying(HumanAnimations.WallRun))
                     {
-                        Cache.Rigidbody.AddForce(Vector3.up * Stats.RunSpeed - Cache.Rigidbody.velocity, ForceMode.VelocityChange);
+                        Vector3 velocityChange = Vector3.up * Stats.RunSpeed - Cache.Rigidbody.velocity;
+                        _instantForceAcc += velocityChange;
+                        Cache.Rigidbody.AddForce(velocityChange, ForceMode.VelocityChange);
                         _wallRunTime += Time.deltaTime;
                         if (!HasDirection)
                         {
-                            Cache.Rigidbody.AddForce(-Cache.Transform.forward * Stats.RunSpeed * 0.75f, ForceMode.Impulse);
+                            Vector3 impulseForce = -Cache.Transform.forward * Stats.RunSpeed * 0.75f;
+                            _instantForceAcc += impulseForce / Cache.Rigidbody.mass;
+                            Cache.Rigidbody.AddForce(impulseForce, ForceMode.Impulse);
                             DodgeWall();
                         }
                         else if (!IsUpFrontGrounded())
@@ -1768,11 +1820,15 @@ namespace Characters
                         {
                             _currentVelocity += Cache.Transform.forward * 4f / Mathf.Max(Cache.Rigidbody.mass, 0.001f);
                             Cache.Rigidbody.velocity = _currentVelocity;
+                            Cache.Rigidbody.AddForce(-_instantForceAcc, ForceMode.VelocityChange);
+                            _instantForceAcc = Vector3.zero;
                         }
                         if (!SettingsManager.InGameCurrent.Misc.AllowStock.Value || SettingsManager.InGameCurrent.Misc.RealismMode.Value)
                         {
                             _currentVelocity = _currentVelocity.normalized * Mathf.Min(_currentVelocity.magnitude, 20f);
                             Cache.Rigidbody.velocity = _currentVelocity;
+                            Cache.Rigidbody.AddForce(-_instantForceAcc, ForceMode.VelocityChange);
+                            _instantForceAcc = Vector3.zero;
                         }
                     }
                     ToggleSparks(false);
@@ -2053,6 +2109,7 @@ namespace Characters
                 float angle = Mathf.Abs(Vector3.Angle(velocity, _lastVelocity));
                 float speedMultiplier = Mathf.Max(1f - (angle * 1.5f * 0.01f), 0f);
                 float speed = _lastVelocity.magnitude * speedMultiplier;
+                // exempt from _impulseForceAccumulator due to not exising in TG1
                 Cache.Rigidbody.velocity = velocity.normalized * speed;
                 float speedDiff = _lastVelocity.magnitude - Cache.Rigidbody.velocity.magnitude;
                 if (SettingsManager.InGameCurrent.Misc.RealismMode.Value && speedDiff > RealismDeathVelocity)
@@ -2110,7 +2167,9 @@ namespace Characters
                 }
                 else if (IsPressDirectionRelativeToWall(_wallSlideGround, 0.5f) && _canWallSlideJump) //pressing away from the wall
                 {
-                    Cache.Rigidbody.AddForce(_wallSlideGround * Stats.RunSpeed * 0.75f, ForceMode.Impulse);
+                    Vector3 impulseForce = _wallSlideGround * Stats.RunSpeed * 0.75f;
+                    _instantForceAcc += impulseForce / Cache.Rigidbody.mass;
+                    Cache.Rigidbody.AddForce(impulseForce, ForceMode.Impulse);
                     DodgeWall();
                 }
                 else if (IsPressDirectionRelativeToWall(-_wallSlideGround, 0.8f)) //pressing towards the wall
@@ -2223,6 +2282,8 @@ namespace Characters
             }
             _currentVelocity = v * newSpeed;
             Cache.Rigidbody.velocity = _currentVelocity;
+            Cache.Rigidbody.AddForce(-_instantForceAcc, ForceMode.VelocityChange);
+            _instantForceAcc = Vector3.zero;
         }
 
         private bool IsStock(bool pivot)
@@ -2879,8 +2940,14 @@ namespace Characters
                 Vector3 launchForce = position - Cache.Transform.position;
                 float num = Mathf.Pow(launchForce.magnitude, 0.1f);
                 if (Grounded)
-                    Cache.Rigidbody.AddForce(Vector3.up * Mathf.Min(launchForce.magnitude * 0.2f, (10f)), ForceMode.Impulse);
-                Cache.Rigidbody.AddForce(launchForce * num * 0.1f, ForceMode.Impulse);
+                {
+                    Vector3 impulseForce = Vector3.up * Mathf.Min(launchForce.magnitude * 0.2f, (10f));
+                    _instantForceAcc += impulseForce / Cache.Rigidbody.mass;
+                    Cache.Rigidbody.AddForce(impulseForce, ForceMode.Impulse);
+                }
+                Vector3 impulseForce2 = launchForce * num * 0.1f;
+                _instantForceAcc += impulseForce2 / Cache.Rigidbody.mass;
+                Cache.Rigidbody.AddForce(impulseForce2, ForceMode.Impulse);
                 _hookHumanConstantTimeLeft = 1f;
             }
         }
@@ -2900,11 +2967,19 @@ namespace Characters
             {
                 Vector3 direction = human.Cache.Transform.position - Cache.Transform.position;
                 float loss = CharacterData.HumanWeaponInfo["Hook"]["InitialVelocityLoss"].AsFloat;
-                Cache.Rigidbody.AddForce(-Cache.Rigidbody.velocity * loss, ForceMode.VelocityChange);
+                Vector3 velocityChange = -Cache.Rigidbody.velocity * loss;
+                _instantForceAcc += velocityChange;
+                Cache.Rigidbody.AddForce(velocityChange, ForceMode.VelocityChange);
                 float num = Mathf.Pow(direction.magnitude, 0.1f);
                 if (Grounded)
-                    Cache.Rigidbody.AddForce(Vector3.up * Mathf.Min(direction.magnitude * 0.2f, 10f), ForceMode.Impulse);
-                Cache.Rigidbody.AddForce(direction * num * CharacterData.HumanWeaponInfo["Hook"]["InitialPullForce"].AsFloat, ForceMode.Impulse);
+                {
+                    Vector3 impulseForce = Vector3.up * Mathf.Min(direction.magnitude * 0.2f, 10f);
+                    _instantForceAcc += impulseForce / Cache.Rigidbody.mass;
+                    Cache.Rigidbody.AddForce(impulseForce, ForceMode.Impulse);
+                }
+                Vector3 impulseForce2 = direction * num * CharacterData.HumanWeaponInfo["Hook"]["InitialPullForce"].AsFloat;
+                _instantForceAcc += impulseForce2 / Cache.Rigidbody.mass;
+                Cache.Rigidbody.AddForce(impulseForce2, ForceMode.Impulse);
                 CrossFade(HumanAnimations.Dash, 0.05f, 0.1f / Animation.GetLength(HumanAnimations.Dash));
                 State = HumanState.Stun;
                 _stateTimeLeft = CharacterData.HumanWeaponInfo["Hook"]["StunTime"].AsFloat;
@@ -2926,13 +3001,17 @@ namespace Characters
                 State != HumanState.Grab && CarryState != HumanCarryState.Carry && MountState == HumanMountState.None && human != this)
             {
                 float loss = CharacterData.HumanWeaponInfo["Hook"]["ConstantVelocityLoss"].AsFloat;
-                Cache.Rigidbody.AddForce(-Cache.Rigidbody.velocity * loss, ForceMode.VelocityChange);
+                Vector3 velocityChange = -Cache.Rigidbody.velocity * loss;
+                _instantForceAcc += velocityChange;
+                Cache.Rigidbody.AddForce(velocityChange, ForceMode.VelocityChange);
                 float constantPullForce = CharacterData.HumanWeaponInfo["Hook"]["ConstantPullForce"].AsFloat;
                 if (constantPullForce > 0f)
                 {
                     Vector3 direction = human.Cache.Transform.position - Cache.Transform.position;
                     float num = Mathf.Pow(direction.magnitude, 0.1f);
-                    Cache.Rigidbody.AddForce(direction * num * constantPullForce, ForceMode.Impulse);
+                    Vector3 impulseForce = direction * num * constantPullForce;
+                    _instantForceAcc += impulseForce / Cache.Rigidbody.mass;
+                    Cache.Rigidbody.AddForce(impulseForce, ForceMode.Impulse);
                 }
             }
         }
@@ -2940,7 +3019,9 @@ namespace Characters
         public void GetStunnedByTS(Vector3 origin)
         {
             Vector3 direction = Cache.Transform.position - origin;
-            Cache.Rigidbody.AddForce(direction.normalized * CharacterData.HumanWeaponInfo["Thunderspear"]["StunForce"].AsFloat, ForceMode.VelocityChange);
+            Vector3 velocityChange = direction.normalized * CharacterData.HumanWeaponInfo["Thunderspear"]["StunForce"].AsFloat;
+            _instantForceAcc += velocityChange;
+            Cache.Rigidbody.AddForce(velocityChange, ForceMode.VelocityChange);
             CrossFade(HumanAnimations.Dash, 0.05f, 0.1f / Animation.GetLength(HumanAnimations.Dash));
             State = HumanState.Stun;
             _stateTimeLeft = CharacterData.HumanWeaponInfo["Thunderspear"]["StunDuration"].AsFloat;

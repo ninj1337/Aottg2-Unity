@@ -69,7 +69,9 @@ namespace Characters
             human.HumanCache.AHSSHit.transform.position = start;
             human.HumanCache.AHSSHit.transform.rotation = Quaternion.LookRotation(direction);
             human.HumanCache.AHSSHit.Activate(0f, 0.1f);
-            human.Cache.Rigidbody.AddForce(-direction * ahssInfo["KnockbackForce"].AsFloat * 2f, ForceMode.VelocityChange);
+            Vector3 velocityChange = -direction * ahssInfo["KnockbackForce"].AsFloat * 2f;
+            human._instantForceAcc += velocityChange;
+            human.Cache.Rigidbody.AddForce(velocityChange, ForceMode.VelocityChange);
             ((InGameMenu)UIManager.CurrentMenu).HUDBottomHandler.ShootAHSS(true, true);
         }
     }

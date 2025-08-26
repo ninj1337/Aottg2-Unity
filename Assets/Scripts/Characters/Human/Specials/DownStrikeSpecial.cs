@@ -31,7 +31,9 @@ namespace Characters
             if (_needActivate)
             {
                 // Impulse force allows people to use this to quickly stop their momentum
-                _human.Cache.Rigidbody.AddForce(Vector3.up * 10f, ForceMode.Impulse);
+                Vector3 impulseForce = Vector3.up * 10f;
+                _human._instantForceAcc += impulseForce / _human.Cache.Rigidbody.mass;
+                _human.Cache.Rigidbody.AddForce(impulseForce, ForceMode.Impulse);
                 _needActivate = false;
                 _human.Cache.Rigidbody.velocity = Vector3.zero;
                 _human.ActivateBlades();
@@ -41,7 +43,9 @@ namespace Characters
                     _human.PlaySound(HumanSounds.BladeSwing4);
             }
 
-            _human.Cache.Rigidbody.AddForce(Vector3.down * 3f, ForceMode.VelocityChange);
+            Vector3 velocityChange = Vector3.down * 3f;
+            _human._instantForceAcc += velocityChange;
+            _human.Cache.Rigidbody.AddForce(velocityChange, ForceMode.VelocityChange);
 
             if ((!firstFrame && _human.Grounded) || _human.HookLeft.IsActive || _human.HookRight.IsActive || _human.State == HumanState.Grab)
             {

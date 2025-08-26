@@ -88,7 +88,9 @@ namespace Characters
                     {
                         _pulled = true;
                         var position = _human.HookRight.GetHookPosition();
-                        _human.Cache.Rigidbody.AddForce((position - _human.Cache.Rigidbody.position).normalized * PullForce, ForceMode.Impulse);
+                        Vector3 impulseForce = (position - _human.Cache.Rigidbody.position).normalized * PullForce;
+                        _human._instantForceAcc += impulseForce / _human.Cache.Rigidbody.mass;
+                        _human.Cache.Rigidbody.AddForce(impulseForce, ForceMode.Impulse);
                     }
                 }
             }
