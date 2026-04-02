@@ -86,9 +86,14 @@ using System;
 
 namespace Utility
 {
-	static class CLZF2
+	public class CLZF2InvalidInputException : Exception
 	{
-		private static readonly uint HLOG = 14;
+		public CLZF2InvalidInputException() : base("Input was not valid CLZF2 compressed data") { }
+    }
+
+    static class CLZF2
+	{
+        private static readonly uint HLOG = 14;
 		private static readonly uint HSIZE = (1 << 14);
 		private static readonly uint MAX_LIT = (1 << 5);
 		private static readonly uint MAX_OFF = (1 << 13);
@@ -123,23 +128,30 @@ namespace Utility
 		// Decompress outputBytes
 		public static byte[] Decompress(byte[] inputBytes)
 		{
-			// Starting guess, increase it later if needed
-			int outputByteCountGuess = inputBytes.Length * 2;
-			byte[] tempBuffer = new byte[outputByteCountGuess];
-			int byteCount = lzf_decompress(inputBytes, ref tempBuffer);
-
-			// If byteCount is 0, then increase buffer and try again
-			while (byteCount == 0)
+			try
 			{
-				outputByteCountGuess *= 2;
-				tempBuffer = new byte[outputByteCountGuess];
-				byteCount = lzf_decompress(inputBytes, ref tempBuffer);
-			}
+				// Starting guess, increase it later if needed
+				int outputByteCountGuess = inputBytes.Length * 2;
+				byte[] tempBuffer = new byte[outputByteCountGuess];
+				int byteCount = lzf_decompress(inputBytes, ref tempBuffer);
 
-			byte[] outputBytes = new byte[byteCount];
-			Buffer.BlockCopy(tempBuffer, 0, outputBytes, 0, byteCount);
-			return outputBytes;
-		}
+				// If byteCount is 0, then increase buffer and try again
+				while (byteCount == 0)
+				{
+					outputByteCountGuess *= 2;
+					tempBuffer = new byte[outputByteCountGuess];
+					byteCount = lzf_decompress(inputBytes, ref tempBuffer);
+				}
+
+				byte[] outputBytes = new byte[byteCount];
+				Buffer.BlockCopy(tempBuffer, 0, outputBytes, 0, byteCount);
+				return outputBytes;
+            }
+			catch (CLZF2InvalidInputException)
+			{
+				return Array.Empty<byte>();
+			}
+        }
 
 		/// <summary>
 		/// Compresses the data using LibLZF algorithm
@@ -291,7 +303,7 @@ namespace Utility
 					if (oidx + ctrl > outputLength)
 					{
 						//SET_ERRNO (E2BIG);
-						return 0;
+						return -1;
 					}
 
 					do
@@ -312,14 +324,14 @@ namespace Utility
 					if (oidx + len + 2 > outputLength)
 					{
 						//SET_ERRNO (E2BIG);
-						return 0;
+						return -1;
 					}
 
 					if (reference < 0)
 					{
 						//SET_ERRNO (EINVAL);
-						return 0;
-					}
+						throw new CLZF2InvalidInputException();
+                    }
 
 					output[oidx++] = output[reference++];
 					output[oidx++] = output[reference++];
